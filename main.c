@@ -25,6 +25,8 @@
 
 extern uint64_t get_cycles(void);
 extern uint64_t get_instret(void);
+extern uint32_t uf8_encode(uint32_t value);
+extern uint32_t uf8_decode(uint32_t fl);
 
 /* Bare metal memcpy implementation */
 void *memcpy(void *dest, const void *src, size_t n)
@@ -598,15 +600,144 @@ static void test_bf16_special_cases(void)
     }
 }
 
+/* ============= UF8 Encode/Decode Tests ============= */
+
+static uint32_t uf8_ref_decode(uint32_t fl)
+{
+    uint32_t mantissa = fl & 0x0F;
+    uint32_t exponent = fl >> 4;
+    if (exponent > 15)
+        exponent = 15;
+    uint32_t offset = 0x7FFFu >> (15u - exponent);
+    offset <<= 4;
+    return (mantissa << exponent) + offset;
+}
+
+static void test_uf8_roundtrip(void)
+{
+    TEST_LOGGER("Test: uf8_encode/uf8_decode round-trip\n");
+
+    enum {
+        UF8_FAIL_NONE,
+        UF8_FAIL_DECODE,
+        UF8_FAIL_ROUNDTRIP,
+        UF8_FAIL_MONOTONIC,
+    } reason = UF8_FAIL_NONE;
+
+    uint32_t fail_fl = 0;
+    uint32_t fail_expected = 0;
+    uint32_t fail_observed = 0;
+    uint32_t fail_value = 0;
+    uint32_t prev_value = 0;
+    bool first = true;
+
+    for (uint32_t fl = 0; fl < 256; fl++) {
+        uint32_t decoded = uf8_decode(fl);
+        uint32_t expected = uf8_ref_decode(fl);
+
+        if (decoded != expected) {
+            reason = UF8_FAIL_DECODE;
+            fail_fl = fl;
+            fail_expected = expected;
+            fail_observed = decoded;
+            break;
+        }
+
+        uint32_t encoded = uf8_encode(decoded);
+        if (encoded != fl) {
+            reason = UF8_FAIL_ROUNDTRIP;
+            fail_fl = fl;
+            fail_expected = fl;
+            fail_observed = encoded;
+            fail_value = decoded;
+            break;
+        }
+
+        if (!first && decoded <= prev_value) {
+            reason = UF8_FAIL_MONOTONIC;
+            fail_fl = fl;
+            fail_expected = prev_value;
+            fail_observed = decoded;
+            break;
+        }
+
+        prev_value = decoded;
+        first = false;
+    }
+
+    if (reason == UF8_FAIL_NONE) {
+        TEST_LOGGER("  UF8 round-trip/monotonicity: PASSED\n");
+        return;
+    }
+
+    TEST_LOGGER("  UF8 round-trip/monotonicity: FAILED\n");
+    switch (reason) {
+    case UF8_FAIL_DECODE:
+        TEST_LOGGER("    Decode mismatch at FL index ");
+        print_dec((unsigned long) fail_fl);
+        TEST_LOGGER("    Expected decoded value: ");
+        print_dec((unsigned long) fail_expected);
+        TEST_LOGGER("    Observed decoded value: ");
+        print_dec((unsigned long) fail_observed);
+        break;
+    case UF8_FAIL_ROUNDTRIP:
+        TEST_LOGGER("    Round-trip mismatch at decoded value ");
+        print_dec((unsigned long) fail_value);
+        TEST_LOGGER("    Expected FL code: ");
+        print_dec((unsigned long) fail_expected);
+        TEST_LOGGER("    Observed FL code: ");
+        print_dec((unsigned long) fail_observed);
+        TEST_LOGGER("    Source FL index: ");
+        print_dec((unsigned long) fail_fl);
+        break;
+    case UF8_FAIL_MONOTONIC:
+        TEST_LOGGER("    Non-monotonic decode at FL index ");
+        print_dec((unsigned long) fail_fl);
+        TEST_LOGGER("    Previous decoded value: ");
+        print_dec((unsigned long) fail_expected);
+        TEST_LOGGER("    Current decoded value: ");
+        print_dec((unsigned long) fail_observed);
+        break;
+    default:
+        break;
+    }
+}
+
+
+
+
 int main(void)
 {
     uint64_t start_cycles, end_cycles, cycles_elapsed;
     uint64_t start_instret, end_instret, instret_elapsed;
 
+    TEST_LOGGER("\n=== UF8 Tests ===\n\n");
+
+    TEST_LOGGER("Test 0: UF8 encode/decode (RISC-V Assembly)\n");
+    start_cycles = get_cycles();
+    start_instret = get_instret();
+
+    test_uf8_roundtrip();
+
+    end_cycles = get_cycles();
+    end_instret = get_instret();
+    cycles_elapsed = end_cycles - start_cycles;
+    instret_elapsed = end_instret - start_instret;
+
+    TEST_LOGGER("  Cycles: ");
+    print_dec((unsigned long) cycles_elapsed);
+    TEST_LOGGER("  Instructions: ");
+    print_dec((unsigned long) instret_elapsed);
+    TEST_LOGGER("\n");
+
+
+
+
+
     TEST_LOGGER("\n=== ChaCha20 Tests ===\n\n");
 
-    /* Test 0: ChaCha20 */
-    TEST_LOGGER("Test 0: ChaCha20 (RISC-V Assembly)\n");
+    /* Test 1: ChaCha20 */
+    TEST_LOGGER("Test 1: ChaCha20 (RISC-V Assembly)\n");
     start_cycles = get_cycles();
     start_instret = get_instret();
 
@@ -625,8 +756,8 @@ int main(void)
 
     TEST_LOGGER("\n=== BFloat16 Tests ===\n\n");
 
-    /* Test 1: Addition */
-    TEST_LOGGER("Test 1: bf16_add\n");
+    /* Test 2: Addition */
+    TEST_LOGGER("Test 2: bf16_add\n");
     start_cycles = get_cycles();
     start_instret = get_instret();
 
@@ -643,8 +774,8 @@ int main(void)
     print_dec((unsigned long) instret_elapsed);
     TEST_LOGGER("\n");
 
-    /* Test 2: Subtraction */
-    TEST_LOGGER("Test 2: bf16_sub\n");
+    /* Test 3: Subtraction */
+    TEST_LOGGER("Test 3: bf16_sub\n");
     start_cycles = get_cycles();
     start_instret = get_instret();
 
@@ -661,8 +792,8 @@ int main(void)
     print_dec((unsigned long) instret_elapsed);
     TEST_LOGGER("\n");
 
-    /* Test 3: Multiplication */
-    TEST_LOGGER("Test 3: bf16_mul\n");
+    /* Test 4: Multiplication */
+    TEST_LOGGER("Test 4: bf16_mul\n");
     start_cycles = get_cycles();
     start_instret = get_instret();
 
@@ -679,8 +810,8 @@ int main(void)
     print_dec((unsigned long) instret_elapsed);
     TEST_LOGGER("\n");
 
-    /* Test 4: Division */
-    TEST_LOGGER("Test 4: bf16_div\n");
+    /* Test 5: Division */
+    TEST_LOGGER("Test 5: bf16_div\n");
     start_cycles = get_cycles();
     start_instret = get_instret();
 
@@ -697,8 +828,8 @@ int main(void)
     print_dec((unsigned long) instret_elapsed);
     TEST_LOGGER("\n");
 
-    /* Test 5: Special cases */
-    TEST_LOGGER("Test 5: bf16_special_cases\n");
+    /* Test 6: Special cases */
+    TEST_LOGGER("Test 6: bf16_special_cases\n");
     start_cycles = get_cycles();
     start_instret = get_instret();
 

@@ -1,106 +1,23 @@
-    .data
-    # For perfcounter / test harness to check result
-final_result: .word 0      # 1 = pass, 0 = fail
-
     .text
-    .globl main
     .globl uf8_decode
     .globl uf8_encode
 
-###################################################
-#                   main
-#  - 由 start.o 呼叫
-#  - 執行完後 ret，讓 start.o 去做 ecall(exit)
-###################################################
-main:
-        # 建立 stack frame，保存 ra & s0~s6
-        addi    sp, sp, -48
-        sw      ra,44(sp)
-        sw      s0,40(sp)
-        sw      s1,36(sp)
-        sw      s2,32(sp)
-        sw      s3,28(sp)
-        sw      s4,24(sp)
-        sw      s5,20(sp)
-        sw      s6,16(sp)
-
-        li      s6,1                    # passed = true (1)
-        li      s2,-1                   # previous_value = -1
-        li      s1,0                    # i = 0
-        li      s5,256                  # Loop limit: i < 256
-
-main_loop_start:
-        bge     s1,s5,loop_exit         # if (i >= 256) break
-
-        # 1. Decode fl = i  → value (s0)
-        mv      a0, s1                  # a0 = fl = i
-        andi    t0, a0, 0x0f            # t0 = mantissa
-        srli    t1, a0, 4               # t1 = exponent
-        li      t2, 0x7FFF
-        li      t3, 15
-        sub     t3, t3, t1              # t3 = 15 - exponent
-        srl     t4, t2, t3
-        slli    t4, t4, 4               # offset
-        sll     t0, t0, t1
-        add     s0, t0, t4              # s0 = value
-
-        # 2. Encode value → fl2
-        mv      a0, s0                  # a0 = value
-        jal     ra, uf8_encode
-        mv      s3, a0                  # s3 = fl2
-
-        # 3. Check if (fl != fl2)
-        beq     s3, s1, check_monotonicity
-        li      s6, 0                   # passed = false
-
-check_monotonicity:
-        # 4. Check if (value <= previous_value)
-        bgt     s0, s2, loop_increment  # if value > prev, OK
-        li      s6, 0                   # else failed
-
-loop_increment:
-        mv      s2, s0                  # previous_value = value
-        addi    s1, s1, 1               # i++
-        j       main_loop_start
-
-loop_exit:
-
-        la      t0, final_result
-        sw      s6, 0(t0)
-
-
-        lw      ra,44(sp)
-        lw      s0,40(sp)
-        lw      s1,36(sp)
-        lw      s2,32(sp)
-        lw      s3,28(sp)
-        lw      s4,24(sp)
-        lw      s5,20(sp)
-        lw      s6,16(sp)
-        addi    sp,sp,48
-        ret
-
-
-
 uf8_decode:
-    # a0: fl
-    mv   t5, a0
-    andi t0, t5, 0x0f      # mantissa
-    srli t1, t5, 4         # exponent
+    mv   t5, a0               # t5 = fl
+    andi t0, t5, 0x0f         # mantissa
+    srli t1, t5, 4            # exponent
     li   t2, 0x7FFF
     li   t3, 15
-    sub  t3, t3, t1        # 15 - exponent
-    srl  t4, t2, t3        # 0x7FFF >> (15 - exponent)
-    slli t4, t4, 4         # << 4
-    sll  a0, t0, t1        # mantissa << exponent
-    add  a0, a0, t4        # + offset
+    sub  t3, t3, t1           # 15 - exponent
+    srl  t4, t2, t3           # 0x7FFF >> (15 - exponent)
+    slli t4, t4, 4            # << 4
+    sll  a0, t0, t1           # mantissa << exponent
+    add  a0, a0, t4           # + offset
     ret
-
-
 
 uf8_encode:
     mv   t0, a0                 # t0 = original value
-
+    
     li   t6, 15
     bleu t0, t6, encode_exp_0_fast_path
     li   t6, 47
@@ -148,7 +65,6 @@ clz_inline_skip:
     srli t2, t2, 1
     bne  x0, t2, clz_inline_loop
     sub  t1, t1, a5             # t1 = lz
-
 
     li   t2, 31
     sub  t2, t2, t1
