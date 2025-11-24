@@ -704,6 +704,72 @@ static void test_uf8_roundtrip(void)
 }
 
 
+typedef struct {
+    uint32_t disk;
+    char from;
+    char to;
+} hanoi_move_t;
+
+extern void hanoi_generate_moves(hanoi_move_t moves[static 7]);
+
+static void test_hanoi(void)
+{
+    TEST_LOGGER("Test: Tower of Hanoi (3 disks)\n");
+
+    static const hanoi_move_t expected[] = {
+        {1, 'A', 'C'},
+        {2, 'A', 'B'},
+        {1, 'C', 'B'},
+        {3, 'A', 'C'},
+        {1, 'B', 'A'},
+        {2, 'B', 'C'},
+        {1, 'A', 'C'},
+    };
+
+    hanoi_move_t actual[7];
+    hanoi_generate_moves(actual);
+
+    bool passed = true;
+
+    for (uint32_t i = 0; i < 7; i++) {
+        const hanoi_move_t *exp = &expected[i];
+        const hanoi_move_t *obs = &actual[i];
+
+        if (exp->disk != obs->disk || exp->from != obs->from ||
+            exp->to != obs->to) {
+            passed = false;
+
+            TEST_LOGGER("  FAILED at move ");
+            print_dec((unsigned long) (i + 1));
+
+            TEST_LOGGER("    Expected disk: ");
+            print_dec((unsigned long) exp->disk);
+            TEST_LOGGER("    Observed disk: ");
+            print_dec((unsigned long) obs->disk);
+
+            TEST_LOGGER("    Expected from: ");
+            char exp_from[] = {exp->from, '\n'};
+            printstr(exp_from, sizeof(exp_from));
+            TEST_LOGGER("    Observed from: ");
+            char obs_from[] = {obs->from, '\n'};
+            printstr(obs_from, sizeof(obs_from));
+
+            TEST_LOGGER("    Expected to: ");
+            char exp_to[] = {exp->to, '\n'};
+            printstr(exp_to, sizeof(exp_to));
+            TEST_LOGGER("    Observed to: ");
+            char obs_to[] = {obs->to, '\n'};
+            printstr(obs_to, sizeof(obs_to));
+
+            break;
+        }
+    }
+
+    if (passed) {
+        TEST_LOGGER("  Tower of Hanoi Gray-code solver: PASSED\n");
+    }
+}
+
 
 
 int main(void)
@@ -844,6 +910,32 @@ int main(void)
     print_dec((unsigned long) cycles_elapsed);
     TEST_LOGGER("  Instructions: ");
     print_dec((unsigned long) instret_elapsed);
+
+
+
+    TEST_LOGGER("\n=== Hanoi Tests ===\n\n");
+
+    /* Test 7: Tower of Hanoi */
+    TEST_LOGGER("Test 7: Tower of Hanoi (C implementation)\n");
+    start_cycles = get_cycles();
+    start_instret = get_instret();
+
+    test_hanoi();
+
+    end_cycles = get_cycles();
+    end_instret = get_instret();
+    cycles_elapsed = end_cycles - start_cycles;
+    instret_elapsed = end_instret - start_instret;
+
+    TEST_LOGGER("  Cycles: ");
+    print_dec((unsigned long) cycles_elapsed);
+    TEST_LOGGER("  Instructions: ");
+    print_dec((unsigned long) instret_elapsed);
+    TEST_LOGGER("\n");
+
+
+
+
 
     TEST_LOGGER("\n=== All Tests Completed ===\n");
 

@@ -1,7 +1,13 @@
-#include <stdio.h>
 #include <stdint.h>
 
-int main(void) {
+typedef struct {
+    uint32_t disk;
+    char from;
+    char to;
+} hanoi_move_t;
+
+void hanoi_generate_moves(hanoi_move_t moves[static 7])
+{
     uint32_t disk_pos[3] = {0, 0, 0};
 
     for (uint32_t n = 1; n < 8; n++) {
@@ -25,19 +31,19 @@ int main(void) {
 
         if (disk == 0) {
             to = from + 2;
-            if (to >= 3) to -= 3;
+            if (to >= 3)
+                to -= 3;
         } else {
             uint32_t small_pos = disk_pos[0];
             to = 3 - from - small_pos;
         }
 
-        printf("Move Disk %u from %c to %c\n",
-               disk + 1,
-               'A' + from,
-               'A' + to);
+        moves[n - 1] = (hanoi_move_t){
+            .disk = disk + 1,
+            .from = (char) ('A' + from),
+            .to = (char) ('A' + to),
+        };
 
         disk_pos[disk] = to;
     }
-
-    return 0;
 }
