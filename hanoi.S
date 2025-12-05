@@ -1,172 +1,102 @@
+    .option arch, rv32i_zicsr
     .text
-    .globl  main
-main:
-    addi    x2, x2, -32
-    sw      x8, 0(x2)
-    sw      x9, 4(x2)
-    sw      x18, 8(x2)
-    sw      x19, 12(x2)
-    sw      x20, 16(x2)
+    .globl  hanoi_generate_moves_asm
+    .type   hanoi_generate_moves_asm, @function
 
-    li      x5, 0x15
-    sw      x5, 20(x2)
-    sw      x5, 24(x2)
-    sw      x5, 28(x2)
+# void hanoi_generate_moves_asm(hanoi_move_t *moves)
 
-    # Fix disk positions (BLANK 1-3: neutralize x5 effect)
-    # BLANK 1: Fix position at x2+20
-    sw      x0, 20(x2)
+hanoi_generate_moves_asm:
+    addi    sp, sp, -28
+    sw      ra, 24(sp)
+    sw      s0, 20(sp)
+    sw      s1, 16(sp)
+    sw      s2, 12(sp)
+    sw      s3, 8(sp)
+    sw      s4, 4(sp)
+    sw      s5, 0(sp)
 
-    # BLANK 2: Fix position at x2+24
-    sw      x0, 24(x2)
+    mv      s0, a0          # move_ptr = moves
+    li      s1, 0           # disk0_pos
+    li      s2, 0           # disk1_pos
+    li      s3, 0           # disk2_pos
+    li      s4, 65          # base_char = 'A'
+    li      s5, 3           # peg_count = 3
 
-    # BLANK 3: Fix position at x2+28
-    sw      x0, 28(x2)
+    li      t0, 1           # n = 1 (move index)
+    li      t1, 8           # stop_n = 8
 
-    addi    x8, x0, 1
-game_loop:
-    # BLANK 4: Check loop termination (2^3 moves)
-    addi    x5, x0, 8
-    beq     x8, x5, finish_game
+loop_generate_moves:
+    beq     t0, t1, finish_generation
 
-    # Gray code formula: gray(n) = n XOR (n >> k)
-    # BLANK 5: What is k for Gray code?
-    srli    x5, x8, 1
+    #  Gray code: g(n) 
+    mv      t2, t0
+    srli    t3, t2, 1
+    xor     t4, t2, t3      # t4 = gray(n)
 
-    # BLANK 6: Complete Gray(n) calculation
-    xor     x6, x8, x5
+    #  Gray code: g(n-1) 
+    addi    t2, t0, -1
+    srli    t3, t2, 1
+    xor     t2, t2, t3      # t2 = gray(n-1)
 
-    # BLANK 7-8: Calculate previous value and its shift
-    addi    x7, x8, -1
-    srli    x28, x7, 1
+    #  changed bits = g(n) ^ g(n-1) 
+    xor     t5, t4, t2
+    andi    t5, t5, 3       # only low 2 bits matter
 
-    # BLANK 9: Generate Gray(n-1)
-    xor     x7, x7, x28
+    beqz    t5, select_disk2     # 00 -> disk2
+    andi    t6, t5, 1
+    bnez    t6, select_disk0     # 01 -> disk0
+    j       select_disk1         # 10 or 11 -> disk1
 
-    # BLANK 10: Which bits changed?
-    xor     x5, x6, x7
+#  disk 0 (smallest disk) 
+select_disk0:
+    mv      a6, s1               # from_peg = disk0_pos
+    addi    a7, a6, 2            # a7 = from + 2
+    blt     a7, s5, small_disk_target_ok
+    addi    a7, a7, -3           # mod 3
+small_disk_target_ok:
+    mv      s1, a7               # disk0_pos = to_peg
+    li      t6, 0                # disk_index = 0
+    j       write_move_entry
 
-    # Initialize disk number
-    addi    x9, x0, 0
+#  disk 1 
+select_disk1:
+    mv      a6, s2               # from_peg = disk1_pos
+    sub     a7, s5, a6           # a7 = 3 - from
+    sub     a7, a7, s1           # a7 = 3 - from - disk0_pos
+    mv      s2, a7               # disk1_pos = to_peg
+    li      t6, 1                # disk_index = 1
+    j       write_move_entry
 
-    # BLANK 11: Mask for testing LSB
-    andi    x6, x5, 1
+#  disk 2 
+select_disk2:
+    mv      a6, s3               # from_peg = disk2_pos
+    sub     a7, s5, a6           # a7 = 3 - from
+    sub     a7, a7, s1           # a7 = 3 - from - disk0_pos
+    mv      s3, a7               # disk2_pos = to_peg
+    li      t6, 2                # disk_index = 2
 
-    # BLANK 12: Branch if disk 0 moves
-    bne     x6, x0, disk_found
+#  write struct hanoi_move_t 
+write_move_entry:
+    add     t2, s4, a6           # from_char = 'A' + from_peg
+    add     t3, s4, a7           # to_char   = 'A' + to_peg
+    addi    t6, t6, 1            # disk_num = disk_index + 1
 
-    # BLANK 13: Set disk 1
-    addi    x9, x0, 1
+    sw      t6, 0(s0)            # moves[i].disk
+    sb      t2, 4(s0)            # moves[i].from_peg
+    sb      t3, 5(s0)            # moves[i].to_peg
 
-    # BLANK 14: Test second bit with proper mask
-    andi    x6, x5, 2
-    bne     x6, x0, disk_found
+    addi    s0, s0, 8            # move_ptr += sizeof(hanoi_move_t)
+    addi    t0, t0, 1            # n++
 
-    # BLANK 15: Last disk number
-    addi    x9, x0, 2
+    j       loop_generate_moves
 
-disk_found:
-    # BLANK 16: Check impossible pattern (multiple bits)
-    andi    x30, x5, 5
-    addi    x31, x0, 5
-    beq     x30, x31, pattern_match
-    jal     x0, continue_move
-pattern_match:
-continue_move:
-
-    # BLANK 17: Word-align disk index (multiply by what?)
-    slli    x5, x9, 2
-
-    # BLANK 18: Base offset for disk array
-    addi    x5, x5, 20
-    add     x5, x2, x5
-    lw      x18, 0(x5)
-
-    bne     x9, x0, handle_large
-
-    # BLANK 19: Small disk moves by how many positions?
-    addi    x19, x18, 2
-
-    # BLANK 20: Number of pegs
-    addi    x6, x0, 3
-    blt     x19, x6, display_move
-    sub     x19, x19, x6
-    jal     x0, display_move
-
-handle_large:
-    # BLANK 21: Load reference disk position
-    lw      x6, 20(x2)
-
-    # BLANK 22: Sum of all peg indices (0+1+2)
-    addi    x19, x0, 3
-    sub     x19, x19, x18
-    sub     x19, x19, x6
-
-display_move:
-    la      x20, obdata
-    add     x5, x20, x18
-
-    # BLANK 23: Load byte from obfuscated data
-    lbu     x11, 0(x5)
-
-    # BLANK 24: Decode constant (0x6F)
-    li      x6, 0x6F
-    xor     x11, x11, x6
-
-    # BLANK 25: Final offset adjustment
-    addi    x11, x11, -0x12
-
-    add     x7, x20, x19
-    lbu     x12, 0(x7)
-    xor     x12, x12, x6
-    addi    x12, x12, -0x12
-
-    la      x10, str1
-    addi    x17, x0, 4
-    ecall
-    addi    x10, x9, 1
-    addi    x17, x0, 1
-    ecall
-    la      x10, str2
-    addi    x17, x0, 4
-    ecall
-    addi    x10, x11, 0
-    addi    x17, x0, 11
-    ecall
-    la      x10, str3
-    addi    x17, x0, 4
-    ecall
-    addi    x10, x12, 0
-    addi    x17, x0, 11
-    ecall
-    addi    x10, x0, 10
-    addi    x17, x0, 11
-    ecall
-
-    # BLANK 26: Calculate storage offset
-    slli    x5, x9, 2
-    addi    x5, x5, 20
-    add     x5, x2, x5
-
-    # BLANK 27: Update disk position
-    sw      x19, 0(x5)
-
-    # BLANK 28-29: Increment counter and loop
-    addi    x8, x8, 1
-    jal     x0, game_loop
-
-finish_game:
-    lw      x8, 0(x2)
-    lw      x9, 4(x2)
-    lw      x18, 8(x2)
-    lw      x19, 12(x2)
-    lw      x20, 16(x2)
-    addi    x2, x2, 32
-    addi    x17, x0, 10
-    ecall
-
-    .data
-obdata:     .byte   0x3c, 0x3b, 0x3a
-str1:       .asciz  "Move Disk "
-str2:       .asciz  " from "
-str3:       .asciz  " to "
+finish_generation:
+    lw      ra, 24(sp)
+    lw      s0, 20(sp)
+    lw      s1, 16(sp)
+    lw      s2, 12(sp)
+    lw      s3, 8(sp)
+    lw      s4, 4(sp)
+    lw      s5, 0(sp)
+    addi    sp, sp, 28
+    ret
