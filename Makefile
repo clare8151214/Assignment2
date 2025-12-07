@@ -19,13 +19,15 @@ EXEC = test.elf
 HANOI_C_EXEC = hanoi_c_test.elf
 HANOI_ASM_EXEC = hanoi_asm_test.elf
 
+RSQRT_C_OBJ = rsqrt.o
+
 CC = $(CROSS_COMPILE)gcc
 AS = $(CROSS_COMPILE)as
 LD = $(CROSS_COMPILE)ld
 OBJDUMP = $(CROSS_COMPILE)objdump
 
 OBJS = start.o main.o perfcounter.o chacha20_asm.o q1utf8.o hanoi.o
-HANOI_C_OBJS = start.o mainC.o perfcounter.o hanoi.o
+HANOI_C_OBJS = start.o mainC.o perfcounter.o hanoi.o $(RSQRT_C_OBJ)
 HANOI_ASM_OBJS = start.o main_asm.o perfcounter.o hanoi_asm.o
 
 .PHONY: all run dump clean hanoi hanoi_c hanoi_asm run_c run_asm run_hanoi_both check-env
@@ -54,6 +56,9 @@ $(HANOI_ASM_EXEC): $(HANOI_ASM_OBJS) $(LINKER_SCRIPT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: %.c
+	$(CC) $(CFLAGS) $< -o $@ -c
+
+$(RSQRT_C_OBJ): rsqrt.c
 	$(CC) $(CFLAGS) $< -o $@ -c
 
 hanoi.o: hanoi.c

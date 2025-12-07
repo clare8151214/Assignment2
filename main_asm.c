@@ -28,6 +28,25 @@ typedef struct hanoi_move {
     char to;
 } hanoi_move_t;
 
+static inline uint64_t get_ticks(void)
+{
+    uint64_t result;
+    uint32_t l, h, h2;
+
+    asm volatile(
+        "rdcycleh %0\n"
+        "rdcycle %1\n"
+        "rdcycleh %2\n"
+        "sub %0, %0, %2\n"
+        "seqz %0, %0\n"
+        "sub %0, zero, %0\n"
+        "and %1, %1, %0\n"
+        : "=r"(h), "=r"(l), "=r"(h2));
+
+    result = (((uint64_t) h) << 32) | ((uint64_t) l);
+    return result;
+}
+
 extern uint64_t get_cycles(void);
 extern uint64_t get_instret(void);
 extern void hanoi_generate_moves_asm(hanoi_move_t moves[static 7]);
@@ -155,22 +174,28 @@ static bool run_hanoi_test(hanoi_generator_t generator)
 
 int main(void)
 {
+    uint64_t start_ticks, end_ticks, ticks_elapsed;
     uint64_t start_cycles, end_cycles, cycles_elapsed;
     uint64_t start_instret, end_instret, instret_elapsed;
 
     TEST_LOGGER("\n=== Hanoi (Assembly) Tests ===\n\n");
     TEST_LOGGER("Test: Tower of Hanoi (assembly implementation)\n");
 
+    start_ticks = get_ticks();
     start_cycles = get_cycles();
     start_instret = get_instret();
 
     bool passed = run_hanoi_test(hanoi_generate_moves_asm);
 
+    end_ticks = get_ticks();
     end_cycles = get_cycles();
     end_instret = get_instret();
+    ticks_elapsed = end_ticks - start_ticks;
     cycles_elapsed = end_cycles - start_cycles;
     instret_elapsed = end_instret - start_instret;
 
+    TEST_LOGGER("  Ticks: ");
+    print_dec((unsigned long) ticks_elapsed);
     TEST_LOGGER("  Cycles: ");
     print_dec((unsigned long) cycles_elapsed);
     TEST_LOGGER("  Instructions: ");
