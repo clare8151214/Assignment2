@@ -54,22 +54,18 @@ clz32_zero_input:
     li      a0, 32
     ret
 
-mul64:
-    mul     t0, a0, a1
-    mulhu   a1, a0, a1
-    mv      a0, t0
-    ret
-
 fast_rsqrt_asm:
-    addi    sp, sp, -32
-    sw      ra, 28(sp)
-    sw      s0, 24(sp)
-    sw      s1, 20(sp)
-    sw      s2, 16(sp)
-    sw      s3, 12(sp)
-    sw      s4, 8(sp)
+    # Fast path for zero
+    bnez    a0, rsqrt_normal
+    ret
     
-    beqz    a0, rsqrt_zero_input
+rsqrt_normal:
+    addi    sp, sp, -24
+    sw      ra, 20(sp)
+    sw      s0, 16(sp)
+    sw      s1, 12(sp)
+    sw      s2, 8(sp)
+    sw      s3, 4(sp)
     
     mv      s0, a0
     
@@ -77,31 +73,31 @@ fast_rsqrt_asm:
     li      t0, 31
     sub     s1, t0, a0
     
+    # Load table values
     slli    t0, s1, 2
     la      t1, rsqrt_table
     add     t1, t1, t0
     lw      s2, 0(t1)
     
-    li      t2, 31
-    bge     s1, t2, skip_ynext
+    bge     s1, t0, skip_ynext
     lw      s3, 4(t1)
+    sub     s3, s2, s3      # Pre-compute delta
     j       do_interp
 skip_ynext:
     li      s3, 0
     
 do_interp:
-    sub     s4, s2, s3
-    
+    # Compute frac = (x - (1 << lz)) * 65536 >> lz
     li      t0, 1
     sll     t0, t0, s1
-    
     sub     t1, s0, t0
     
+    # Inline mul64: t1 * 65536
     li      t2, 65536
-    mv      a0, t1
-    mv      a1, t2
-    call    mul64
+    mul     a0, t1, t2
+    mulhu   a1, t1, t2
     
+    # Right shift by lz
     mv      t0, s1
     beqz    t0, frac_done
     li      t1, 32
@@ -110,67 +106,51 @@ do_interp:
     srl     t2, a0, t0
     sub     t3, t1, t0
     sll     t4, a1, t3
-    or      t2, t2, t4
-    srl     t5, a1, t0
-    mv      a0, t2
-    mv      a1, t5
+    or      a0, t2, t4
     j       frac_done
     
 frac_large_shift:
     addi    t0, t0, -32
     srl     a0, a1, t0
-    li      a1, 0
     
 frac_done:
-    mv      t0, a0
+    # Interpolation: y = y0 - (delta * frac >> 16)
+    # Inline mul64: s3 * a0
+    mul     t0, s3, a0
+    mulhu   t1, s3, a0
+    srli    t0, t0, 16
+    slli    t1, t1, 16
+    or      t0, t0, t1
+    sub     s2, s2, t0
     
-    mv      a0, s4
-    mv      a1, t0
-    call    mul64
+    # Newton-Raphson: y * y (only need low 32 bits)
+    mul     s3, s2, s2
+    
+    # x * (y*y) >> 16
+    mul     a0, s0, s3
+    mulhu   a1, s0, s3
     srli    a0, a0, 16
     slli    t1, a1, 16
     or      t0, a0, t1
     
-    sub     s2, s2, t0
+    # 3.0 - x*y*y
+    li      t1, 196608      # 3 << 16
+    sub     t1, t1, t0
     
-    # 關鍵：只保存 y*y 的低32位到 s3
-    mv      a0, s2
-    mv      a1, s2
-    call    mul64
-    mv      s3, a0
-    
-    # 計算 x * (y*y 的低32位)
-    mv      a0, s0
-    mv      a1, s3
-    call    mul64
-    srli    a0, a0, 16
-    slli    t1, a1, 16
-    or      s4, a0, t1
-    
-    li      t0, 3
-    slli    t0, t0, 16
-    sub     t0, t0, s4
-    
-    mv      a0, s2
-    mv      a1, t0
-    call    mul64
+    # y * (3 - x*y*y) / 2
+    mul     a0, s2, t1
+    mulhu   a1, s2, t1
     srli    a0, a0, 17
     slli    t1, a1, 15
     or      a0, a0, t1
     
-rsqrt_return:
-    lw      ra, 28(sp)
-    lw      s0, 24(sp)
-    lw      s1, 20(sp)
-    lw      s2, 16(sp)
-    lw      s3, 12(sp)
-    lw      s4, 8(sp)
-    addi    sp, sp, 32
+    lw      ra, 20(sp)
+    lw      s0, 16(sp)
+    lw      s1, 12(sp)
+    lw      s2, 8(sp)
+    lw      s3, 4(sp)
+    addi    sp, sp, 24
     ret
-
-rsqrt_zero_input:
-    li      a0, 0
-    j       rsqrt_return
 
 fast_distance_3d:
     addi    sp, sp, -16
@@ -178,22 +158,21 @@ fast_distance_3d:
     sw      s0, 8(sp)
     sw      s1, 4(sp)
     
+    # x^2 + y^2 + z^2
     mul     t0, a0, a0
     mul     t1, a1, a1
     mul     t2, a2, a2
-    add     t3, t0, t1
-    add     t3, t3, t2
+    add     t0, t0, t1
+    add     s0, t0, t2
     
-    mv      s0, t3
-    
+    # rsqrt
     mv      a0, s0
     call    fast_rsqrt_asm
     mv      s1, a0
     
-    mv      a0, s0
-    mv      a1, s1
-    call    mul64
-    
+    # distance = sum * rsqrt >> 16
+    mul     a0, s0, s1
+    mulhu   a1, s0, s1
     srli    a0, a0, 16
     slli    t0, a1, 16
     or      a0, a0, t0
