@@ -16,7 +16,6 @@ rsqrt_table:
 
 clz32:
     beqz    a0, clz32_zero_input
-
     li      t0, 0
 
     srli    t1, a0, 16
@@ -58,22 +57,6 @@ clz32_zero_input:
 mul64:
     mul     t0, a0, a1
     mulhu   a1, a0, a1
-    mv      a0, t0
-    ret
-
-__muldi3:
-    li      t0, 0
-
-loop_muldi3:
-    beqz    a1, muldi3_done
-    andi    t1, a1, 1
-    beqz    t1, skip_add
-    add     t0, t0, a0
-skip_add:
-    slli    a0, a0, 1
-    srli    a1, a1, 1
-    j       loop_muldi3
-muldi3_done:
     mv      a0, t0
     ret
 
@@ -150,11 +133,13 @@ frac_done:
     
     sub     s2, s2, t0
     
+    # 關鍵：只保存 y*y 的低32位到 s3
     mv      a0, s2
     mv      a1, s2
     call    mul64
     mv      s3, a0
     
+    # 計算 x * (y*y 的低32位)
     mv      a0, s0
     mv      a1, s3
     call    mul64
